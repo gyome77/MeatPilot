@@ -33,8 +33,9 @@ Early development. Milestone **M0**: pure control engine plus chamber simulator,
 with the specification's §15 acceptance suite green on the host. No hardware
 required to build or test this stage.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, and
-[docs/PRIOR-ART.md](docs/PRIOR-ART.md) for what was taken from existing projects.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design,
+[docs/PRIOR-ART.md](docs/PRIOR-ART.md) for what was taken from existing
+projects, and [docs/BOM.md](docs/BOM.md) for a costed parts list.
 
 ## Layout
 
