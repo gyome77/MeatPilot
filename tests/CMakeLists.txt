@@ -18,11 +18,14 @@ add_executable(meatpilot_tests
   unit/test_guards.cpp
   unit/test_coupling.cpp
   unit/test_ventilation.cpp
+  unit/test_sensor.cpp
+  unit/test_derived.cpp
   invariant/test_invariants.cpp
   scenario/test_acceptance.cpp
+  scenario/test_closed_loop.cpp
 )
 
-target_link_libraries(meatpilot_tests PRIVATE meatpilot_core doctest::doctest)
+target_link_libraries(meatpilot_tests PRIVATE meatpilot_sim doctest::doctest)
 target_include_directories(meatpilot_tests PRIVATE .)
 
 include(${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake)

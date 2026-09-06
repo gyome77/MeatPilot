@@ -6,16 +6,9 @@
 
 namespace meatpilot::control {
 
-/// A conditioned sensor reading.
-///
-/// `filtered` is what regulation uses; `raw` is kept because spec 4.3 requires
-/// the alarm layer to also examine raw readings, so a fast excursion is not
-/// smoothed away by the filter.
-struct Reading {
-    float raw{0.0F};
-    float filtered{0.0F};
-    bool  valid{false};  ///< present, in range, not frozen
-};
+/// Conditioned readings come from core/sensor; the engine consumes them and
+/// never decides validity itself.
+using meatpilot::Reading;
 
 /// Operating mode (spec section 2).
 enum class Mode : std::uint8_t {

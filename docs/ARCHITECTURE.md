@@ -681,7 +681,7 @@ Mapped to the spec's §16 releases, re-sequenced for a software-first start.
 
 | Milestone | Content | Exit |
 |---|---|---|
-| **M0** *(in progress)* | `core/` engine + `platform/sim` + full §15 suite green in CI. No hardware. | All §15 rows pass on host; invariants hold under property testing |
+| **M0** ✅ *(done)* | `core/` engine + `core/sensor` + `platform/sim` + §15 suite green in CI. No hardware. | All host-decidable §15 rows pass; invariants hold under property testing |
 | **M1** | Programme engine, product/weigh-in service, alarm catalogue incl. AL-08..11, config schema + persistence, all host-tested | 30-day simulated run with recipe, batches and injected faults |
 | **M2** = R0 | ESP32-S3 bring-up: SHT45, DS18B20, relays, display, buttons, watchdog | 72 h bench run, correct hysteresis and restart behaviour |
 | **M3** = R1 | Web UI, REST + WebSocket, microSD history, CSV export, signed OTA | 30-day chamber test; mandatory acceptance tests pass |
@@ -694,18 +694,27 @@ now.
 
 ---
 
-### 15.1 M0 progress
+### 15.1 M0 outcome
 
-Done: the three-stage engine, hysteresis, compressor and anti-oscillation
-guards, mutual exclusion, absolute limits, temperature/humidity coupling,
-circulation and fresh-air scheduling, door handling, and 35 host tests covering
-unit behaviour, six randomised invariants and the section 15 rows that are
-decidable at engine level.
+Complete. 56 host tests: the three-stage engine, sensor conditioning, derived
+quantities, six randomised invariants, and closed-loop scenarios driving a
+simulated chamber.
 
-Remaining for M0: `platform/sim` chamber physics (so AL-03 "commanded ON with no
-response" can be tested both ways), and `core/sensor` conditioning, which turns
-the frozen-probe and divergence rows from injected `valid=false` flags into
-tests of the real detection logic.
+The frozen-probe and divergence rows of §15 are no longer covered by injecting
+`valid=false`; they run through the real detector, driven by a chamber that has
+genuinely stopped moving. AL-03's precondition is now testable in both
+directions — dead cooling, slow cooling and working cooling produce three
+distinguishable trajectories, which is the signal the M1 alarm rule will key on.
+
+**A finding worth recording.** The first closed-loop run raised a false
+frozen-probe alarm. The cause was not the detector: a noiseless simulator
+settles to a mathematically exact equilibrium, at which point the readings stop
+changing altogether and the probe is, by any reasonable definition, stuck. Real
+air and real sensors always dither. The simulator now models measurement noise
+(±0.02 °C, ±0.10 %RH), because a noiseless sensor is the unrealistic case. The
+lesson generalises to hardware: freeze detection depends on the channel's noise
+floor exceeding its `resolution` setting, so a very stable chamber with a
+coarse probe is the configuration to watch.
 
 ---
 
@@ -725,7 +734,12 @@ tests of the real detection logic.
 | FR-A-01..04 | `control/fresh_air` | `unit/fresh_air_*` |
 | FR-W-01..09 | `product/` | `unit/product_*`, `scenario/multi_product` |
 | §4.2 priority ladder | `control/engine` stages A/B/C | `invariant/priority_ladder` |
-| §4.3 filtering | `sensor/filter` | `unit/filter_median_lowpass` |
+| §4.3 filtering | `sensor/conditioner` | `unit/test_sensor` |
+| AL-02 sensor health | `sensor/conditioner` | `unit/test_sensor`, `scenario/test_closed_loop` |
+| FR-T-06 divergence + source | `sensor::compare`, `sensor::select` | `unit/test_sensor` |
+| FR-H-06 calibration | `sensor/conditioner` | `unit/test_sensor` |
+| FR-H-01 dew point, abs. humidity | `sensor/derived` | `unit/test_derived` |
+| Closed-loop regulation | engine + `platform/sim` | `scenario/test_closed_loop` |
 | AL-01..07 | `alarm/rules` | `scenario/alarm_*` |
 | AL-08..11 **[EXT]** | `alarm/quality`, `alarm/degraded` | `unit/quality_alarms` |
 | §5 latch + ack | `alarm/lifecycle` | `unit/alarm_latch` |

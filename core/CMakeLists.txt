@@ -4,6 +4,8 @@
 add_library(meatpilot_core STATIC
   src/control/engine.cpp
   src/control/names.cpp
+  src/sensor/conditioner.cpp
+  src/sensor/derived.cpp
 )
 
 target_include_directories(meatpilot_core PUBLIC include)

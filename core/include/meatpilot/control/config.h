@@ -4,12 +4,11 @@
 #include <cstdint>
 
 #include "meatpilot/control/actuator.h"
+#include "meatpilot/model/types.h"
 
 namespace meatpilot::control {
 
-/// Seconds since an arbitrary epoch. Injected, never read from a clock, so
-/// every timing rule is testable by advancing a number.
-using Seconds = double;
+using meatpilot::Seconds;
 
 /// Presence and timing guards for one actuator.
 struct ActuatorConfig {

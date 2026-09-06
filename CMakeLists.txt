@@ -11,6 +11,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wconversion)
 
 add_subdirectory(core)
+add_subdirectory(platform/sim)
 
 include(CTest)
 if(BUILD_TESTING)
