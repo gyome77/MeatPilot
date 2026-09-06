@@ -1,0 +1,25 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  host-tests:
+    name: core engine + acceptance suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: core purity
+        run: ./tools/check-core-purity.sh
+
+      - name: configure
+        run: cmake -S . -B build-host -DCMAKE_BUILD_TYPE=Debug
+
+      - name: build
+        run: cmake --build build-host -j
+
+      - name: test
+        run: ctest --test-dir build-host --output-on-failure

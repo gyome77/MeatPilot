@@ -221,7 +221,12 @@ inside the storage-and-time budget group of 15 EUR).
 
 ### 3.5 Safe states and boot behaviour
 
-**DP-02** — each actuator has a configured fail-safe state, defaulting to OFF.
+**DP-02** — each actuator has a fail-safe state. In M0 that state is **OFF for
+every actuator**, without exception, which is what keeps the "stages A and C can
+only force OFF" invariant strict and machine-checkable. Making it configurable
+(some operators want the circulation fan to keep running in SAFE mode, to avoid
+a stagnant chamber) would weaken the invariant to "never beyond the fail-safe
+state", so it is deferred until there is a real reason to want it.
 
 On boot (**§13.1**):
 1. All outputs driven to fail-safe **before** any other initialisation.
@@ -280,7 +285,15 @@ Validity (`Reading::valid`) is the conjunction of:
 | Present and answering | `UNAVAILABLE` | AL-02 |
 | Within physical range | `OUT_OF_RANGE` | AL-02 |
 | Changed within `stale_s` | `FROZEN` | AL-02, §15 |
+| Continuously valid for `stabilisation_period` | `STABILISING` | §4.3 |
 | Agrees with backup probe | `DIVERGENT` | FR-T-06, AL-02 |
+
+**Stabilisation is tracked per quantity, not globally.** Replacing the humidity
+probe must not restart the settling window for temperature, and — the case that
+actually bit during implementation — a *missing* probe must be reported as
+`SENSOR_INVALID`, not as `STABILISING`. A global flag conflates "waiting for a
+good reading" with "there is no reading", which is precisely the distinction
+DP-05 exists to preserve.
 
 **Frozen-sensor tuning note:** an SHT45 reports to 0.01 °C and will essentially
 never repeat a value, so a long `stale_s` (default 1800 s) is safe. A DS18B20 at
@@ -668,7 +681,7 @@ Mapped to the spec's §16 releases, re-sequenced for a software-first start.
 
 | Milestone | Content | Exit |
 |---|---|---|
-| **M0** *(now)* | `core/` engine + `platform/sim` + full §15 suite green in CI. No hardware. | All §15 rows pass on host; invariants hold under property testing |
+| **M0** *(in progress)* | `core/` engine + `platform/sim` + full §15 suite green in CI. No hardware. | All §15 rows pass on host; invariants hold under property testing |
 | **M1** | Programme engine, product/weigh-in service, alarm catalogue incl. AL-08..11, config schema + persistence, all host-tested | 30-day simulated run with recipe, batches and injected faults |
 | **M2** = R0 | ESP32-S3 bring-up: SHT45, DS18B20, relays, display, buttons, watchdog | 72 h bench run, correct hysteresis and restart behaviour |
 | **M3** = R1 | Web UI, REST + WebSocket, microSD history, CSV export, signed OTA | 30-day chamber test; mandatory acceptance tests pass |
@@ -678,6 +691,21 @@ Mapped to the spec's §16 releases, re-sequenced for a software-first start.
 
 M0 and M1 need no hardware at all — that is roughly half the product, buildable
 now.
+
+---
+
+### 15.1 M0 progress
+
+Done: the three-stage engine, hysteresis, compressor and anti-oscillation
+guards, mutual exclusion, absolute limits, temperature/humidity coupling,
+circulation and fresh-air scheduling, door handling, and 35 host tests covering
+unit behaviour, six randomised invariants and the section 15 rows that are
+decidable at engine level.
+
+Remaining for M0: `platform/sim` chamber physics (so AL-03 "commanded ON with no
+response" can be tested both ways), and `core/sensor` conditioning, which turns
+the frozen-probe and divergence rows from injected `valid=false` flags into
+tests of the real detection logic.
 
 ---
 
