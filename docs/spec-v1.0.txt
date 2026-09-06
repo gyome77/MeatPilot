@@ -1,0 +1,685 @@
+
+TECHNICAL PRODUCT SPECIFICATION
+ESP32 Meat Drying and Curing Controller
+Temperature, humidity, airflow, fresh-air exchange, product weight tracking and remote alarms
+Document
+ | Value
+ | 
+Version
+ | 1.0
+ | 
+Status
+ | Draft for architecture and implementation planning
+ | 
+Target platform
+ | ESP32 family; local-first operation
+ | 
+Product line
+ | Two economy editions: Economy Panel and Economy Web
+ | 
+Primary use
+ | Small meat drying / charcuterie curing chamber
+ | 
+
+Recommendation
+Use one shared firmware codebase with hardware profiles. The controller must remain autonomous when Wi-Fi, the remote interface or an optional server is unavailable. For food and equipment safety, software alarms do not replace correct curing practice, an independent high/low temperature cut-out, or electrical protection.
+ | 
+Executive summary
+The product is an ESP32-based environmental controller for a meat drying or curing chamber. It measures and regulates temperature and relative humidity, controls internal circulation and fresh-air renewal, tracks multiple products by weight, records the drying history and raises clear alarms when the chamber cannot maintain safe operating conditions.
+Two economy editions are specified. Economy Panel is the lowest-cost standalone controller with a small display and buttons. Economy Web adds an embedded browser interface, remote alarms, data export and firmware updates while keeping the complete electronics budget at or below EUR 200. Both editions share the same local safety-first control engine. The recommended Economy Web build uses carefully selected sensors, protected switching, a watchdog and safe recovery to improve reliability without creating a separate premium product line.
+
+1. Scope and design principles
+1.1 In scope
+Closed-loop control of cooling, heating, humidification and dehumidification.
+Scheduled or demand-based internal ventilation and fresh-air exchange.
+Manual or automatic weight tracking for several products or batches.
+Local physical interface on both editions; responsive web interface on Economy Web.
+Remote monitoring and alarms without making cloud access necessary for control.
+Data logging, configuration backup, diagnostics and firmware updates.
+Two hardware profiles that run the same core control logic.
+1.2 Out of scope
+A guarantee of microbiological or food safety.
+Automatic measurement of pH, salt concentration, nitrite concentration or water activity unless added later as supported external instruments.
+Commercial HACCP certification or regulatory validation.
+Direct control of mains loads without correctly rated relays, contactors, fuses, earthing and enclosure.
+1.3 Design principles
+DP-01 [MUST] Local control shall continue without Wi-Fi, Internet, MQTT, Home Assistant or any remote service.
+DP-02 [MUST] Every actuator shall fail to a defined safe state after sensor failure, firmware restart or communication loss.
+DP-03 [MUST] Cooling compressor protection shall be implemented locally, including minimum OFF time, minimum ON time and startup lockout.
+DP-04 [MUST] Configuration and historical data shall survive power interruption.
+DP-05 [MUST] The software shall expose the reason for each actuator decision, not only its ON/OFF state.
+DP-06 [MUST] One application codebase shall support Economy Panel and Economy Web through build profiles and runtime hardware capability detection.
+
+2. Users and operating modes
+Role
+ | Main permissions
+ | 
+Owner / administrator
+ | Configure hardware, limits, networking, users, recipes and firmware updates.
+ | 
+Operator
+ | Start or pause programmes, register products, record weights, acknowledge alarms and use maintenance mode.
+ | 
+Viewer
+ | Read current conditions, charts, product progress and alarms.
+ | 
+
+Mode
+ | Behaviour
+ | 
+OFF
+ | All automatic environmental outputs OFF; monitoring and critical alarms remain active.
+ | 
+MANUAL
+ | Authorised operator controls outputs, subject to hard safety limits and compressor timers.
+ | 
+AUTO
+ | Temperature, humidity and ventilation are controlled from fixed setpoints.
+ | 
+PROGRAMME
+ | Setpoints and ventilation rules follow a multi-phase recipe.
+ | 
+MAINTENANCE
+ | Outputs forced OFF, nuisance alarms suppressed for a limited, visible period.
+ | 
+SAFE
+ | Entered after critical sensor or system fault; dangerous outputs OFF and alarm latched.
+ | 
+
+3. Functional requirements
+3.1 Temperature control
+FR-T-01 [MUST] Measure chamber air temperature at least every 5 seconds and display a filtered value and the latest raw value.
+FR-T-02 [MUST] Support cooling, heating, or both, with independent configurable setpoint and deadband.
+FR-T-03 [MUST] Prevent cooling and heating from operating simultaneously.
+FR-T-04 [MUST] Provide compressor minimum OFF time (default 7 minutes), minimum ON time (default 3 minutes) and power-up lockout (default 2 minutes).
+FR-T-05 [MUST] Support absolute high and low temperature limits. A limit breach shall stop any actuator that makes the condition worse.
+FR-T-06 [SHOULD] Economy Web should compare the main temperature reading with an optional low-cost backup sensor and alarm on divergence.
+3.2 Humidity control
+FR-H-01 [MUST] Measure relative humidity at least every 10 seconds and calculate dew point and absolute humidity.
+FR-H-02 [MUST] Support humidifier and dehumidifier outputs with independent deadband and minimum cycle times.
+FR-H-03 [MUST] Prevent humidifier and dehumidifier from operating simultaneously.
+FR-H-04 [MUST] Account for interaction with cooling and heating: cooling may reduce humidity and heating may reduce relative humidity.
+FR-H-05 [MUST] Detect implausible, saturated, frozen or unavailable humidity readings and enter the configured safe state.
+FR-H-06 [MUST] Allow field calibration against a reference instrument and retain calibration coefficients.
+3.3 Internal ventilation
+FR-V-01 [MUST] Control an internal circulation fan separately from fresh-air exchange.
+FR-V-02 [MUST] Support continuous low-speed operation, interval operation and demand operation.
+FR-V-03 [MUST] Allow a minimum and maximum duty cycle per programme phase.
+FR-V-04 [MUST] Provide a door-open pause and a configurable post-door circulation cycle.
+FR-V-05 [SHOULD] If speed feedback is available, alarm when the fan is commanded ON but no rotation is detected.
+3.4 Fresh-air exchange
+FR-A-01 [MUST] Control a dedicated intake/exhaust fan or motorised damper independently from the circulation fan.
+FR-A-02 [MUST] Support fixed intervals, daily schedules, manual purge and optional CO2-based demand.
+FR-A-03 [MUST] Delay or inhibit fresh-air exchange when it would worsen an active critical temperature or humidity deviation, unless a safety purge is required.
+FR-A-04 [MUST] Track cumulative fresh-air runtime and the last exchange time.
+3.5 Product and weight management
+FR-W-01 [MUST] Support at least 20 active products and 100 archived products.
+FR-W-02 [MUST] Store product name, type, batch, chamber position, start date/time, initial weight, current weight, target loss percentage and optional notes/photo reference.
+FR-W-03 [MUST] Accept manual weigh-ins from the local or remote interface.
+FR-W-04 [MUST] Support optional automatic weighing channels and associate each channel with one product or tray.
+FR-W-05 [MUST] Calculate weight loss as: 100 x (initial weight - current weight) / initial weight.
+FR-W-06 [MUST] Display initial weight, latest weight, absolute loss, percentage loss, drying rate per day and estimated completion date.
+FR-W-07 [MUST] Retain the full weigh-in history. A new reading shall not overwrite earlier readings.
+FR-W-08 [MUST] Detect negative loss, sudden implausible changes, disconnected load cells and long periods without a weigh-in.
+FR-W-09 [MUST] Allow several products to share one programme while retaining separate progress and target values.
+4. Programmes and control logic
+4.1 Programme model
+A programme is an ordered list of phases. Each phase may set temperature, humidity, circulation and fresh-air rules. A phase ends by elapsed time, manual confirmation, target weight loss of a designated reference product, or the first/last of several product targets.
+Phase field
+ | Type / example
+ | 
+name
+ | Text, e.g. Fermentation, Drying, Holding
+ | 
+temperature target / deadband
+ | 13.0 C / +/-0.8 C
+ | 
+humidity target / deadband
+ | 75% RH / +/-3% RH
+ | 
+circulation rule
+ | Continuous low; 5 min every 30 min; demand
+ | 
+fresh-air rule
+ | 2 min every 4 h; schedule; CO2 threshold
+ | 
+completion
+ | Duration; manual; product loss; reference batch loss
+ | 
+maximum duration
+ | Safety fallback when weight data is unavailable
+ | 
+alarm limits
+ | Phase-specific warning and critical boundaries
+ | 
+
+4.2 Decision priority
+Priority
+ | Condition
+ | Required response
+ | 
+1
+ | Electrical or independent safety trip
+ | Remove power from affected loads. Software cannot override.
+ | 
+2
+ | Critical sensor/system fault
+ | Enter SAFE mode; switch dangerous actuators OFF; latch alarm.
+ | 
+3
+ | Absolute environmental limit
+ | Stop aggravating actuator; use corrective actuator if valid.
+ | 
+4
+ | Compressor protection timer
+ | Delay compressor command and show timer/reason.
+ | 
+5
+ | Temperature correction
+ | Apply cooling or heating; temperature has priority.
+ | 
+6
+ | Humidity correction
+ | Apply humidification/dehumidification subject to temperature interaction.
+ | 
+7
+ | Air exchange
+ | Run only if not blocked by higher-priority conditions.
+ | 
+8
+ | Routine circulation
+ | Run according to phase schedule.
+ | 
+
+4.3 Control behaviour
+Use hysteresis for the initial release. PID control may be added later only for proportional devices; it is not required for compressor relays.
+Apply rolling median/outlier rejection followed by a light low-pass filter. Alarm logic must also examine raw readings to avoid hiding a rapid excursion.
+Each output command records timestamp, requested state, actual state if feedback exists, decision reason and any blocking timer.
+After reboot, outputs start OFF. Sensors must be valid for a configurable stabilisation period before automatic control resumes.
+Manual commands expire automatically and remain subject to hard limits and compressor protection.
+5. Alarm and fault management
+Severity
+ | Meaning
+ | Examples
+ | Response
+ | 
+INFO
+ | Operational event
+ | Programme phase changed; weigh-in due
+ | Log; optional notification
+ | 
+WARNING
+ | Degraded condition
+ | Slow drift; probe disagreement; door open
+ | Notify; continue safely
+ | 
+CRITICAL
+ | Control or safety risk
+ | No valid probe; high temperature; stuck relay
+ | Safe action; audible/local and remote alarm; latch
+ | 
+
+AL-01 [MUST] High/low temperature and humidity, with warning delay and immediate critical limit.
+AL-02 [MUST] Sensor unavailable, out of physical range, unchanged beyond a configurable period, or divergent from redundant probe.
+AL-03 [MUST] Actuator commanded ON without expected environmental response within a configurable time.
+AL-04 [MUST] Actuator feedback inconsistent with command, including relay/contact feedback where fitted.
+AL-05 [MUST] Door open too long, repeated short cycling, excessive actuator runtime or compressor starts per hour.
+AL-06 [MUST] Low supply voltage, repeated reboot, storage failure, clock invalid, network unavailable and remote notification failure.
+AL-07 [MUST] Weight channel disconnected, unstable, implausible step, gain beyond tolerance or missing scheduled weigh-in.
+Every alarm record shall include severity, timestamp, current values, limits, affected product/programme, automatic action, acknowledgement status and resolution timestamp. Critical alarms shall remain visible after the condition clears until acknowledged.
+6. User interface and remote access
+6.1 Local interface
+UI-01 [MUST] Economy Web shall provide a responsive interface served by the ESP32 and usable from a phone without an application install.
+UI-02 [MUST] Provide an initial Wi-Fi access-point setup flow and a physical method to re-enter setup mode.
+UI-03 [MUST] The dashboard shall show current temperature/RH, setpoints, output states, active phase, alarms, network status and product progress.
+UI-04 [MUST] Provide charts for temperature, humidity, dew point, output activity and weight loss.
+UI-05 [MUST] Configuration changes shall be validated, confirmed and written atomically with rollback to the last valid configuration.
+UI-06 [MUST] Both editions shall include a small status display, three or four buttons, a status LED and a local alarm buzzer. Economy Web shall remain fully usable when Wi-Fi is unavailable.
+6.2 Remote access
+Remote access is optional and shall not be required for regulation. Three supported patterns are proposed:
+Pattern
+ | Use
+ | Security position
+ | 
+VPN to local network
+ | Direct access to ESP32 web interface
+ | Preferred for self-hosted use; no inbound port forwarding.
+ | 
+MQTT to private broker
+ | Remote dashboard, history and alerts
+ | TLS, unique credentials and topic-level permissions.
+ | 
+Optional Home Assistant
+ | Integration with an existing home platform
+ | Monitoring and commands only; ESP32 retains local authority.
+ | 
+
+NET-01 [MUST] Never expose the unauthenticated ESP32 web server directly to the public Internet.
+NET-02 [MUST] Support HTTPS where hardware permits, strong administrator credentials and session timeout.
+NET-03 [SHOULD] Economy Web should support MQTT over TLS when resource and memory limits permit.
+NET-04 [MUST] Remote commands shall be authenticated, validated, logged and subject to the same local safety rules as local commands.
+7. Data model and storage
+Entity
+ | Minimum fields
+ | 
+Chamber
+ | ID, name, hardware profile, timezone, firmware version
+ | 
+Sensor
+ | ID, type, channel, calibration, quality, last update
+ | 
+Actuator
+ | ID, function, state, feedback, runtime, cycle count
+ | 
+Programme
+ | ID, name, revision, ordered phases
+ | 
+Run
+ | ID, programme revision, start/end, phase, status
+ | 
+Product
+ | ID, name/type/batch, position, initial/latest/target weight
+ | 
+Weigh-in
+ | Product ID, timestamp, weight, source, stability, note
+ | 
+Sample
+ | Timestamp, raw/filtered T/RH, dew point, outputs, quality
+ | 
+Alarm
+ | ID, severity, type, context, action, ack/resolution
+ | 
+Audit event
+ | User/source, timestamp, action, old/new values
+ | 
+
+Economy Web shall retain at least 30 days of down-sampled environmental and weight history on microSD; short high-resolution history may remain in RAM or flash.
+Economy editions may retain summary data in flash; Economy Web may export detailed data to MQTT or downloadable CSV.
+Store configuration in NVS with schema version and CRC. Store time-series data in LittleFS or microSD using append-safe files.
+Provide CSV and JSON export for products, weigh-ins, environmental history, alarms and audit events.
+8. System architecture
+8.1 Shared software architecture
+Module
+ | Responsibility
+ | 
+HAL / drivers
+ | Sensors, relays, contactors, display, buttons, storage, RTC, watchdog
+ | 
+Acquisition
+ | Sampling, validation, calibration, filtering, sensor health
+ | 
+Control engine
+ | State machine, hysteresis, priorities, timers, safe states
+ | 
+Programme engine
+ | Phases, completion conditions and recipe revisions
+ | 
+Product service
+ | Products, weigh-ins, loss calculations and ETA
+ | 
+Alarm manager
+ | Rules, severity, latching, acknowledgement and escalation
+ | 
+Persistence
+ | Configuration, journal, time-series and recovery
+ | 
+Web/API
+ | Dashboard, settings, REST/WebSocket, authentication
+ | 
+Connectivity
+ | Wi-Fi, NTP, MQTT and optional integrations
+ | 
+Diagnostics
+ | Health, logs, reset reason, runtime counters and export
+ | 
+
+Recommended FreeRTOS separation: acquisition task, control task, output task, storage task, network task and UI task. The control and output tasks must have priority over network/UI work. A hardware watchdog shall supervise the control path.
+8.2 Shared economy hardware
+Target
+A practical controller for one small chamber. Economy Panel minimises cost. Economy Web adds browser access and uses the recommended reliability configuration while remaining within a EUR 200 controller-electronics budget.
+ | 
+Component
+ | Recommended implementation
+ | Rationale
+ | 
+Controller
+ | ESP32-S3; 8 MB flash and PSRAM for Economy Web
+ | One codebase; enough memory for web assets and rollback
+ | 
+Temperature/RH
+ | One Sensirion SHT45 on cable; optional DS18B20 backup
+ | Better stability than DHT22; digital calibration
+ | 
+Weight
+ | Manual entry; optional HX711 + load cell channels
+ | Scales from no weighing hardware to two low-cost channels
+ | 
+Outputs
+ | Opto-isolated low-voltage relay board driving rated contactors
+ | Separates logic from mains switching
+ | 
+Network
+ | None required for Panel; ESP32 2.4 GHz Wi-Fi for Web
+ | No separate Raspberry Pi or gateway
+ | 
+Storage
+ | NVS + LittleFS; microSD recommended for Web
+ | Safe settings plus affordable long-term history
+ | 
+Clock
+ | NTP; optional DS3231
+ | Lowest component count
+ | 
+Interface
+ | Small OLED/LCD, 3-4 buttons, buzzer and status LED; Web also serves responsive UI
+ | Local operation is always available
+ | 
+Power
+ | Certified 5 V DC supply with fuse and brownout detection
+ | Reduces resets and unsafe output behaviour
+ | 
+
+8.3 Recommended reliability configuration
+Recommendation
+Use this configuration for Economy Web. It is not a separate product version: it is a better component selection and safer implementation that remains below the EUR 200 target.
+ | 
+Use an SHT45 as the main temperature/RH probe and a waterproof DS18B20 as an independent temperature cross-check.
+Use a genuine ESP32-S3 module with hardware watchdog, brownout detection, protected boot settings and dual firmware partitions.
+Keep regulation, alarms and the local panel independent from Wi-Fi, MQTT, Home Assistant and Internet availability.
+Use opto-isolated relay outputs only as control signals; switch compressors and mains loads through correctly rated contactors with compressor minimum-off timing.
+Use a certified power supply, input fuse, transient protection, replaceable sensor connectors and strain relief.
+Write configuration atomically with CRC; use a microSD append journal for history and recover cleanly after power loss.
+Fit an independent high/low safety thermostat where a temperature excursion could damage products or equipment.
+
+8.4 Edition definitions
+Edition
+ | Local interface
+ | Remote interface
+ | Intended use
+ | 
+E1 - Economy Panel
+ | Small display; minimal buttons; setup wizard and alarm acknowledgement
+ | None required
+ | Lowest-cost standalone chamber
+ | 
+E2 - Economy Web
+ | Same small display and buttons as E1
+ | ESP32 Wi-Fi web UI, exports, OTA and optional MQTT
+ | Recommended model; remote supervision within EUR 200
+ | 
+
+9. Edition comparison
+Capability
+ | E1 Economy Panel
+ | E2 Economy Web
+ | 
+Core regulation
+ | Fully local
+ | Fully local; network-independent
+ | 
+Environmental sensing
+ | 1 x SHT45
+ | 1 x SHT45 + DS18B20 recommended
+ | 
+Local UI
+ | Small display + buttons + buzzer
+ | Same local panel
+ | 
+Connectivity
+ | None required
+ | Wi-Fi; captive commissioning portal
+ | 
+Web/API/MQTT
+ | No
+ | Web UI and API; MQTT optional
+ | 
+Weight
+ | Manual; optional HX711
+ | Manual; up to two HX711 channels in target budget
+ | 
+Storage
+ | Flash summary
+ | Flash + microSD history
+ | 
+Firmware update
+ | Protected wired service update
+ | Signed OTA with rollback
+ | 
+Indicative controller cost*
+ | EUR 70-120
+ | EUR 150-200 maximum
+ | 
+
+*Indicative architecture-level estimates only. Final cost depends mainly on the number and rating of contactors, weighing channels, enclosure and electrical installation.
+9.1 Economy Web target bill of materials
+Cost group
+ | Target EUR
+ | Included
+ | 
+ESP32-S3, display and controls
+ | 30
+ | 8 MB/PSRAM board, small display, buttons, LED and buzzer
+ | 
+Environmental sensing
+ | 25
+ | SHT45, protective cap/connector and DS18B20 backup
+ | 
+Storage and time
+ | 15
+ | microSD interface/card; NTP with optional low-cost RTC
+ | 
+Relay interface and protection
+ | 25
+ | Opto-isolated outputs, fuse and low-voltage protection
+ | 
+Power, enclosure and wiring
+ | 40
+ | Certified supply, enclosure, terminals, connectors and cabling
+ | 
+Weight option
+ | 40
+ | Up to two HX711/load-cell channels; omit if manual weighing is used
+ | 
+Contingency
+ | 25
+ | Shipping, small parts and price variation
+ | 
+Maximum
+ | 200
+ | Controller electronics; chamber appliances and professional mains work excluded
+ | 
+
+10. Hardware interfaces
+Interface
+ | Use
+ | 
+I2C
+ | SHT45, display and optional RTC; keep probe cable short or use a bus extender
+ | 
+SPI
+ | microSD storage
+ | 
+1-Wire
+ | DS18B20 backup temperature sensor
+ | 
+GPIO outputs
+ | Opto-isolated relay commands for cooling, heating, humidifying, dehumidifying, circulation and fresh air
+ | 
+GPIO inputs
+ | Buttons, door switch, safety trip and optional output feedback
+ | 
+HX711
+ | Optional load cells; use shielded cable and separate mechanical platforms
+ | 
+
+11. Software interfaces
+API-01 [MUST] Economy Web shall expose a versioned local REST API for status, configuration, programmes, products, weigh-ins, alarms and exports.
+API-02 [MUST] Economy Web shall use WebSocket or Server-Sent Events for live dashboard updates.
+API-03 [SHOULD] Economy Web should publish MQTT state and alarms and accept a limited command set when enabled.
+API-04 [SHOULD] Economy Web should provide discovery-compatible entities for optional Home Assistant integration without moving control logic out of the ESP32.
+API-05 [MUST] Economy Web shall provide signed OTA updates with rollback. Economy Panel shall support signed update through a protected local service connector.
+12. Security requirements
+SEC-01 [MUST] Unique initial administrator credential; force change during commissioning.
+SEC-02 [MUST] Store password verifiers, not plain-text passwords. Protect secrets from configuration exports by default.
+SEC-03 [MUST] Economy Web shall use signed firmware images and rollback; secure boot and flash encryption should be enabled when supported by the selected module.
+SEC-04 [MUST] Rate-limit login attempts and record authentication and configuration changes.
+SEC-05 [MUST] Disable unused services; no Telnet; debug interfaces disabled or physically protected after commissioning.
+SEC-06 [MUST] No automatic cloud dependency. Remote access through VPN or authenticated TLS connection.
+13. Reliability and safety
+13.1 Failure responses
+Failure
+ | Required response for both editions
+ | 
+Primary T/RH probe fails
+ | Stop humidity control; use backup temperature only if validated; raise a local alarm and remote alarm on Economy Web
+ | 
+ESP32 restarts
+ | Set outputs OFF, validate sensors, honour compressor lockout, record reset cause and resume only if configured
+ | 
+Wi-Fi/Internet loss
+ | Continue local control and logging; show warning; queue remote events until connectivity returns
+ | 
+Storage failure
+ | Continue regulation from RAM/NVS, reduce logging and raise a maintenance alarm
+ | 
+Relay/contactor stuck
+ | Detect by output feedback where fitted; alarm; independent safety cut-out must remain effective
+ | 
+Power interruption
+ | Restart safely, recover the last valid configuration and prevent any unsafe output pulse
+ | 
+
+13.2 Electrical and food-safety constraints
+Mandatory implementation constraint
+Mains wiring, fusing, earthing, contactor sizing and enclosure construction must be performed or reviewed by a competent person. Cheap PCB relays must not directly switch a compressor or other inductive mains load unless their real load rating and protection are verified.
+ | 
+Provide a physical emergency OFF or readily accessible isolator.
+Use independent over-temperature/under-temperature protection for unattended operation.
+Position sensors away from direct humidifier mist, cooling coil discharge and fan jet; protect them from condensation while retaining airflow.
+Environmental control does not measure water activity or pH and cannot determine whether meat is safe to eat.
+Recipes and alarm limits must be set by a competent user and must not be presented as validated food-safety advice.
+14. Diagnostics and maintenance
+DG-01 [MUST] Show firmware version, uptime, reset reason, free memory, task watchdog status, RSSI/link, clock status and storage health.
+DG-02 [MUST] Show each sensor raw value, filtered value, calibration, quality flag, last change and last successful reading.
+DG-03 [MUST] Show each output command, physical feedback where present, blocking timer, cycle count and accumulated runtime.
+DG-04 [MUST] Provide a downloadable diagnostic bundle with secrets removed.
+DG-05 [MUST] Provide guided sensor comparison/calibration and load-cell tare/span calibration.
+DG-06 [MUST] Issue maintenance reminders based on compressor starts, fan runtime, humidifier runtime and sensor calibration interval.
+15. Verification and acceptance criteria
+Test
+ | Acceptance criterion
+ | 
+Offline control
+ | Disconnect all networks for 24 h; regulation and logging continue and queued events recover.
+ | 
+Sensor disconnection
+ | Remove each probe; fault detected within configured timeout; safe output state and alarm produced.
+ | 
+Frozen sensor
+ | Hold repeated identical data; fault raised within configured frozen-sensor period.
+ | 
+Compressor protection
+ | No start occurs before minimum OFF time; no command violates minimum ON time.
+ | 
+Mutual exclusion
+ | Cooling/heating and humidify/dehumidify pairs can never be ON together, including during reboot.
+ | 
+Power cycling
+ | 100 repeated interruptions produce no corrupt configuration and no unsafe output pulse.
+ | 
+Weight calculation
+ | Known initial/current weights produce correct absolute and percentage loss within 0.1 percentage point.
+ | 
+Multi-product tracking
+ | At least 20 products retain independent histories and targets across reboot.
+ | 
+Alarm delivery
+ | Local critical alarm appears immediately; remote delivery retries and records success/failure.
+ | 
+OTA rollback
+ | Interrupted/invalid update returns to previous working firmware.
+ | 
+Backup sensor divergence
+ | Injected temperature difference triggers a warning/critical threshold and records the selected control source.
+ | 
+
+16. Implementation roadmap
+Release
+ | Scope
+ | Exit condition
+ | 
+R0 - bench prototype
+ | ESP32, one T/RH sensor, simulated outputs and small local display
+ | Continuous 72 h bench run; correct hysteresis and restart behaviour
+ | 
+R1 - economical MVP
+ | Four outputs, programmes, manual products/weights, alarms, CSV, OTA
+ | 30-day chamber test; all mandatory economical acceptance tests pass
+ | 
+R2 - remote services
+ | MQTT TLS, notifications, richer charts and backup
+ | Offline/online recovery and security tests pass
+ | 
+R3 - reliability hardening
+ | Backup temperature probe, watchdog, brownout recovery, protected outputs and microSD journal
+ | 90-day endurance and fault-injection tests pass within EUR 200 BOM
+ | 
+R4 - weighing
+ | Up to two automatic channels, reading stability, ETA and calibration workflow
+ | Reference-weight tests and drift tests pass
+ | 
+
+17. Lessons incorporated from existing projects
+Project
+ | Useful experience incorporated
+ | Caution
+ | 
+Curing Chamber for Home Assistant
+ | Multi-phase programmes, optional actuators, compressor guards, sensor-frozen detection, redundant probes, product batches, weight-loss ETA and degraded-mode alerts
+ | Very new project with limited field history; ESP32 should retain local authority
+ | 
+Mycodo
+ | Modular environmental inputs/outputs, regulation, PID options, graphs, timers and extensive diagnostics
+ | Raspberry Pi-centred; broader and more complex than this embedded product
+ | 
+TerrariumPI
+ | Enclosure-oriented control, scheduling, mobile web use, camera and sensor/actuator flexibility
+ | Not specific to food curing
+ | 
+PorkPi
+ | Separate circulation and fresh-air functions, several weighing channels, watchdog and scheduled setpoints
+ | Old code, DHT22 and direct hobby relay assumptions should not be reused
+ | 
+meat-curing-chamber
+ | MQTT, web/mobile monitoring, CSV/metrics and independent humidity/temperature services
+ | Last material development is old; 433 MHz switching provides limited command confirmation
+ | 
+ESPHome/Home Assistant
+ | Local embedded automation, remote entities, OTA and broad hardware support
+ | Generic components require a curing-specific state machine and safety layer
+ | 
+
+18. Open decisions before detailed design
+Exact chamber type, internal volume and environmental range.
+Cooling, heating, humidifying and dehumidifying equipment ratings and whether they restart automatically after power is restored.
+Number of independently weighed products/trays and required weight resolution.
+Need for fermentation temperatures above normal drying temperature.
+Wi-Fi signal quality at the chamber and preferred secure remote-access method.
+Required retention period and whether data must be synchronised to another system.
+Whether the first release requires a local screen or may use a phone/web browser only.
+Appendix A - Reference repositories
+Curing Chamber: https://github.com/ttiot/curingChamber - Home Assistant integration for charcuterie curing programmes and batches.
+Mycodo: https://github.com/kizniche/Mycodo - Raspberry Pi environmental monitoring and regulation.
+TerrariumPI: https://github.com/theyosh/TerrariumPI - Raspberry Pi enclosed-environment automation.
+PorkPi: https://github.com/erni313/PorkPi - Raspberry Pi meat-curing controller with ventilation and weighing.
+Meat curing chamber: https://github.com/mattcontinisio/meat-curing-chamber - MQTT/web monitoring and control framework.
+ESPHome: https://github.com/esphome/esphome - Embedded ESP32 automation and integrations.
+Home Assistant Core: https://github.com/home-assistant/core - Optional remote monitoring platform.
+Appendix B - Definition of done for the first build
+Economy Panel and Economy Web reference units assembled in protected enclosures with correctly rated external switching.
+Temperature, humidity, circulation and fresh-air outputs tested with simulated and real loads.
+At least three products can be registered and weighed independently from the local panel; the same operations work through Economy Web.
+Power failure, probe failure and network failure produce defined safe behaviour.
+Thirty days of environmental and weight history can be viewed or exported.
+A critical alarm is visible locally and reaches the configured remote destination.
+Configuration and firmware can be backed up, updated and rolled back.
