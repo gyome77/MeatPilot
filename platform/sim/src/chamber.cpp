@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "meatpilot/sim/chamber.h"
 
+#include <cstdint>
+
 namespace meatpilot::sim {
 namespace {
 constexpr float clampf(float v, float lo, float hi) noexcept {

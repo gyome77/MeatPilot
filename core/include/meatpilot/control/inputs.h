@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <cstdint>
+
 #include "meatpilot/control/actuator.h"
 #include "meatpilot/control/config.h"
 

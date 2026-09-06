@@ -5,6 +5,8 @@
 // injected constant: they exercise the controller as a feedback system.
 #include <doctest/doctest.h>
 
+#include <cmath>
+
 #include "meatpilot/control/engine.h"
 #include "meatpilot/sensor/conditioner.h"
 #include "meatpilot/sensor/derived.h"
@@ -85,8 +87,8 @@ TEST_CASE("the loop pulls a warm chamber to setpoint and holds it") {
     Loop loop;
     loop.run(12 * 3600.0);
 
-    CHECK(std::abs(loop.chamber.temperature() - loop.cfg.target_temp) < 1.5F);
-    CHECK(std::abs(loop.chamber.humidity() - loop.cfg.target_humidity) < 4.0F);
+    CHECK(std::fabs(loop.chamber.temperature() - loop.cfg.target_temp) < 1.5F);
+    CHECK(std::fabs(loop.chamber.humidity() - loop.cfg.target_humidity) < 4.0F);
 }
 
 TEST_CASE("mutual exclusion holds across a full closed-loop run") {
@@ -197,5 +199,5 @@ TEST_CASE("an open door interrupts regulation and the chamber recovers") {
     CHECK_FALSE(loop.last.on(Actuator::Circulate));    // FR-V-04
 
     loop.run(6 * 3600.0);
-    CHECK(std::abs(loop.chamber.temperature() - loop.cfg.target_temp) < 1.5F);
+    CHECK(std::fabs(loop.chamber.temperature() - loop.cfg.target_temp) < 1.5F);
 }
