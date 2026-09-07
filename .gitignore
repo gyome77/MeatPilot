@@ -1,6 +1,7 @@
 .pio/
 build/
 build-host/
+build-direct/
 cmake-build-*/
 sdkconfig
 sdkconfig.old

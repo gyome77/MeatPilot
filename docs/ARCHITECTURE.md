@@ -219,6 +219,84 @@ succeed — which violates **DP-01**'s spirit if control quality depends on it.
 **Recommendation: promote the DS3231 to a required part for E2** (~2 EUR, well
 inside the storage-and-time budget group of 15 EUR).
 
+### 3.4a Switching an appliance rather than a compressor
+
+**This chamber is a wine fridge, switched whole at the mains.** That is a
+different actuator from a bare compressor, and it changes what a command means.
+
+`Cool = ON` means **the appliance is powered and permitted to cool** — not "the
+compressor is running". The fridge's own thermostat decides that, and cycles
+the compressor on its own schedule, invisibly to us. Three consequences:
+
+1. **The appliance's setpoint must sit below the chamber target.** If the wine
+   fridge is set to 14 °C and MeatPilot targets 13 °C, granting power achieves
+   nothing and the chamber never reaches setpoint — which would look exactly
+   like a broken compressor to AL-03. Set the appliance to its minimum, or a
+   few degrees under the coldest phase in the recipe, and let MeatPilot do the
+   regulating.
+2. **Our min-OFF has to be longer, not shorter.** When we cut power we do not
+   know whether the compressor was running at that instant. On restore, the
+   fridge's thermostat may call immediately and start the compressor against
+   undissipated head pressure. Our relay is the *only* thing standing between
+   the appliance and a stalled restart, so it must cover the compressor's full
+   recovery time rather than the remainder of it. Hence 10 minutes for
+   `ApplianceWithThermostat` against 7 for `DirectCompressor`.
+3. **Min-ON has to be longer too.** The appliance spends the first part of
+   every power-up booting its own controller rather than cooling. Cutting
+   power again too soon achieves nothing but wear.
+
+These are the `CoolingKind` profiles in `core/control/profiles.h`.
+
+**Minimum-ON sets a floor on overshoot, and it can exceed the deadband.**
+This fell out of the first closed-loop run and is the most practically
+important consequence of switching an appliance. Once cooling starts it must
+run for `min_on`, so the chamber falls by at least
+
+```
+overshoot ≈ cooling_rate × min_on
+```
+
+regardless of the deadband. With the 5-minute min-ON that appliance switching
+needs and a strong compressor fridge (≈0.010 °C/s), that is a **3 °C**
+overshoot against a 0.8 °C deadband — the controller cannot hold the band at
+all, and the simulated chamber swung 8.7–18.2 °C around a 13 °C setpoint at 48 %
+cooling duty. A wine cooler at ≈0.003 °C/s overshoots about 0.9 °C, which the
+band absorbs.
+
+So, before trusting a deadband:
+
+1. **Measure the chamber's actual cooling rate** — how fast it falls with the
+   appliance powered and the door shut. This is a ten-minute measurement and it
+   determines everything below.
+2. **Check `rate × min_on` against the deadband.** If overshoot exceeds it, the
+   options are a wider deadband (accept the swing), a shorter min-ON (more
+   appliance wear), or a weaker cooling path.
+3. **Prefer the swing to the wear.** In curing, ±1 °C of slow cycling is
+   harmless; short-cycling a compressor is not. Widen the deadband first.
+
+This is why the simulator's default `cool_rate` is deliberately strong and the
+integration test overrides it with a wine-cooler value: the default is the case
+that breaks, and it should stay easy to reproduce.
+
+**Two things to verify on the actual unit before trusting this:**
+
+- **Does it resume cooling on power restore without a button press?** Some
+  appliances come back in standby and need the panel touched. If yours does,
+  this whole approach fails and the fridge's own thermostat must be bypassed
+  instead. Test it at the wall before wiring anything.
+- **Is it compressor or thermoelectric?** Many wine fridges are Peltier. A
+  thermoelectric unit has no compressor to protect (use the `Thermoelectric`
+  profile, ~1 minute guards), but it is weak — typically 10–15 K below ambient
+  at best — and it barely dehumidifies, which shifts load onto a separate
+  dehumidifier. Compressor units are stronger and dry the air as a side effect.
+
+**A useful safety side effect.** The fridge's own thermostat is downstream of
+our relay but upstream of its compressor, and it is not running our firmware.
+So even if our relay welds closed, the chamber cannot go colder than the
+appliance's own setpoint. That is a genuine backstop against over-cooling — but
+only against over-cooling. It does nothing about a stuck heater, which is why
+§13.2's independent cut-out is still required.
+
 ### 3.5 Safe states and boot behaviour
 
 **DP-02** — each actuator has a fail-safe state. In M0 that state is **OFF for
@@ -682,7 +760,7 @@ Mapped to the spec's §16 releases, re-sequenced for a software-first start.
 | Milestone | Content | Exit |
 |---|---|---|
 | **M0** ✅ *(done)* | `core/` engine + `core/sensor` + `platform/sim` + §15 suite green in CI. No hardware. | All host-decidable §15 rows pass; invariants hold under property testing |
-| **M1** | Programme engine, product/weigh-in service, alarm catalogue incl. AL-08..11, config schema + persistence, all host-tested | 30-day simulated run with recipe, batches and injected faults |
+| **M1** ✅ *(done)* | Programme engine, product/weigh-in service, alarm catalogue incl. AL-08..11, cooling profiles, all host-tested | Simulated run with recipe, batches and injected faults; AL-03 separates dead from slow |
 | **M2** = R0 | ESP32-S3 bring-up: SHT45, DS18B20, relays, display, buttons, watchdog | 72 h bench run, correct hysteresis and restart behaviour |
 | **M3** = R1 | Web UI, REST + WebSocket, microSD history, CSV export, signed OTA | 30-day chamber test; mandatory acceptance tests pass |
 | **M4** = R2 | MQTT/TLS, notifications, HA discovery, backup/restore | Offline/online recovery and security tests pass |
@@ -693,6 +771,34 @@ M0 and M1 need no hardware at all — that is roughly half the product, buildabl
 now.
 
 ---
+
+### 15.2 M1 outcome
+
+Complete. The programme engine (phases, five completion conditions, revisions,
+six presets), the product service (append-only weigh-ins, least-squares drying
+rate, ETA, plausibility checks), the full AL-01…AL-11 catalogue with latching
+and reminders, and the cooling-connection profiles of §3.4a.
+
+Three decisions worth recording:
+
+- **A weight-driven phase without `max_duration` is a configuration error, not
+  an unbounded phase.** `validate()` refuses it and the run never starts. The
+  difference is between a recipe that finishes late and a chamber that holds
+  22 °C for a month because a load cell came unplugged.
+- **The drying rate is a least-squares slope, not a two-point difference.** A
+  5 g scale error on a 1 kg product is half a percentage point; over a
+  three-day gap that is a rate error larger than the rate itself, and it feeds
+  straight into the ETA. A test asserts the fitted rate survives injected
+  weigh-in noise.
+- **Rate-window alarms carry no extra onset delay.** "Starts per hour" already
+  averages over an hour; stacking the generic warning delay on top only
+  postpones a real short-cycling alarm by another ten minutes. Found by a test
+  that expected the alarm sooner than the code produced it.
+
+AL-03 is proven in both directions against the simulator: dead cooling raises
+it, cooling at a quarter of normal power does not, and healthy cooling does
+not. An alarm that fires on both is useless; one that fires on neither is
+worse.
 
 ### 15.1 M0 outcome
 
@@ -742,7 +848,12 @@ coarse probe is the configuration to watch.
 | Closed-loop regulation | engine + `platform/sim` | `scenario/test_closed_loop` |
 | AL-01..07 | `alarm/rules` | `scenario/alarm_*` |
 | AL-08..11 **[EXT]** | `alarm/quality`, `alarm/degraded` | `unit/quality_alarms` |
-| §5 latch + ack | `alarm/lifecycle` | `unit/alarm_latch` |
+| §5 latch + ack | `alarm/condition` | `unit/test_alarm` |
+| AL-01..AL-11 catalogue | `alarm/manager` | `unit/test_alarm`, `scenario/test_integration` |
+| §4.1 phases + revisions | `program/programme`, `program/runner` | `unit/test_program` |
+| §4.1 weight-phase safety cap | `program::validate` | `unit/test_program` |
+| Cooling connection profiles | `control/profiles` | `unit/test_profiles` |
+| Whole-core integration | all | `scenario/test_integration` |
 | UI-01..06 | `web/`, `app/ui_task` | manual + integration |
 | NET-01..04 | `net/`, guard stage | `unit/remote_command_guarded` |
 | §7 data model | `model/`, `storage/` | `unit/serialisation_roundtrip` |

@@ -4,6 +4,13 @@
 add_library(meatpilot_core STATIC
   src/control/engine.cpp
   src/control/names.cpp
+  src/control/profiles.cpp
+  src/product/registry.cpp
+  src/program/programme.cpp
+  src/program/runner.cpp
+  src/program/presets.cpp
+  src/alarm/condition.cpp
+  src/alarm/manager.cpp
   src/sensor/conditioner.cpp
   src/sensor/derived.cpp
 )
