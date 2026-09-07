@@ -21,5 +21,25 @@ jobs:
       - name: build
         run: cmake --build build-host -j
 
+      # -V so doctest's own summary reaches the log. The suite is registered as
+      # a single ctest entry (running every case in one process is far faster
+      # than launching one per case), which means a bare ctest run reports
+      # "1 test passed" and says nothing about how many cases actually ran. A
+      # regression that silently skipped tests would look identical to success.
       - name: test
-        run: ctest --test-dir build-host --output-on-failure
+        run: ctest --test-dir build-host -V
+
+  direct-build:
+    name: generator-free build script
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # tools/build-host.sh is the fallback path for environments where
+      # generator-spawned compilers misbehave. It is only useful if it still
+      # works, so it is exercised on every push rather than discovered broken
+      # at the moment it is needed.
+      - name: build and run
+        run: |
+          ./tools/build-host.sh
+          ./build-direct/meatpilot_tests
